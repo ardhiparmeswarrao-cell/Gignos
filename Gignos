@@ -1,0 +1,323 @@
+import pygame
+import random
+import math
+import sys
+
+# Initialize pygame
+pygame.init()
+
+# Screen dimensions
+WIDTH, HEIGHT = 800, 600
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Free Fire Clone")
+
+# Colors
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+RED = (255, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+BROWN = (139, 69, 19)
+GRAY = (128, 128, 128)
+YELLOW = (255, 255, 0)
+
+# Game variables
+clock = pygame.time.Clock()
+FPS = 60
+PLAYER_SPEED = 5
+BULLET_SPEED = 10
+ENEMY_SPEED = 2
+
+# Player class
+class Player:
+    def __init__(self, x, y, color):
+        self.x = x
+        self.y = y
+        self.color = color
+        self.width = 30
+        self.height = 50
+        self.health = 100
+        self.ammo = 30
+        self.direction = 0  # Angle in degrees
+        self.speed = PLAYER_SPEED
+        self.alive = True
+        
+    def draw(self, screen):
+        # Draw body
+        pygame.draw.rect(screen, self.color, (self.x - self.width//2, self.y - self.height//2, self.width, self.height))
+        
+        # Draw gun (pointing in direction)
+        gun_length = 30
+        end_x = self.x + math.cos(math.radians(self.direction)) * gun_length
+        end_y = self.y - math.sin(math.radians(self.direction)) * gun_length
+        pygame.draw.line(screen, BLACK, (self.x, self.y), (end_x, end_y), 5)
+        
+        # Draw health bar
+        pygame.draw.rect(screen, RED, (self.x - 25, self.y - 40, 50, 10))
+        pygame.draw.rect(screen, GREEN, (self.x - 25, self.y - 40, 50 * (self.health / 100), 10))
+        
+    def move(self, dx, dy):
+        # Check if movement is within safe zone
+        if self.in_safe_zone(self.x + dx, self.y + dy):
+            self.x += dx
+            self.y += dy
+            
+    def in_safe_zone(self, x, y):
+        # Check if position is within safe zone
+        distance = math.sqrt((x - safe_zone_x)**2 + (y - safe_zone_y)**2)
+        return distance <= safe_zone_radius
+        
+    def take_damage(self, amount):
+        self.health -= amount
+        if self.health <= 0:
+            self.alive = False
+            
+    def shoot(self):
+        if self.ammo > 0:
+            self.ammo -= 1
+            # Calculate bullet direction vector
+            dx = math.cos(math.radians(self.direction))
+            dy = -math.sin(math.radians(self.direction))  # Negative because y increases downward
+            return Bullet(self.x, self.y, dx, dy, self.color)
+        return None
+
+# Enemy class (inherits from Player)
+class Enemy(Player):
+    def __init__(self, x, y):
+        super().__init__(x, y, RED)
+        self.speed = ENEMY_SPEED
+        self.move_timer = 0
+        self.shoot_timer = 0
+        
+    def update(self, player):
+        if not self.alive:
+            return
+            
+        # Move toward player or randomly
+        self.move_timer -= 1
+        if self.move_timer <= 0:
+            # Change direction occasionally
+            if random.random() < 0.3:
+                # Move toward player
+                angle = math.atan2(player.y - self.y, player.x - self.x)
+                self.direction = math.degrees(angle)
+            else:
+                # Move randomly
+                self.direction = random.randint(0, 360)
+            self.move_timer = random.randint(30, 90)
+            
+        # Move in the current direction
+        dx = math.cos(math.radians(self.direction)) * self.speed
+        dy = -math.sin(math.radians(self.direction)) * self.speed
+        self.move(dx, dy)
+        
+        # Occasionally shoot
+        self.shoot_timer -= 1
+        if self.shoot_timer <= 0 and random.random() < 0.1:
+            self.shoot_timer = random.randint(30, 60)
+            return self.shoot()
+        return None
+
+# Bullet class
+class Bullet:
+    def __init__(self, x, y, dx, dy, color):
+        self.x = x
+        self.y = y
+        self.dx = dx
+        self.dy = dy
+        self.color = color
+        self.speed = BULLET_SPEED
+        self.damage = 25
+        
+    def update(self):
+        self.x += self.dx * self.speed
+        self.y += self.dy * self.speed
+        
+    def draw(self, screen):
+        pygame.draw.circle(screen, self.color, (int(self.x), int(self.y)), 5)
+        
+    def is_off_screen(self):
+        return (self.x < 0 or self.x > WIDTH or 
+                self.y < 0 or self.y > HEIGHT)
+
+# Safe zone variables
+safe_zone_x = WIDTH // 2
+safe_zone_y = HEIGHT // 2
+safe_zone_radius = 300
+safe_zone_shrink_timer = 1000  # Frames until safe zone shrinks
+safe_zone_min_radius = 100
+
+# Create player
+player = Player(WIDTH // 4, HEIGHT // 2, BLUE)
+
+# Create enemies
+enemies = []
+for _ in range(5):
+    # Spawn enemies outside the safe zone initially
+    angle = random.random() * 2 * math.pi
+    distance = random.randint(safe_zone_radius + 50, min(WIDTH, HEIGHT) // 2)
+    x = safe_zone_x + math.cos(angle) * distance
+    y = safe_zone_y + math.sin(angle) * distance
+    enemies.append(Enemy(x, y))
+
+# Game objects
+bullets = []
+game_over = False
+score = 0
+
+# Main game loop
+running = True
+while running:
+    # Handle events
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+        elif event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_r and game_over:
+                # Reset game
+                player = Player(WIDTH // 4, HEIGHT // 2, BLUE)
+                enemies = []
+                for _ in range(5):
+                    angle = random.random() * 2 * math.pi
+                    distance = random.randint(safe_zone_radius + 50, min(WIDTH, HEIGHT) // 2)
+                    x = safe_zone_x + math.cos(angle) * distance
+                    y = safe_zone_y + math.sin(angle) * distance
+                    enemies.append(Enemy(x, y))
+                bullets = []
+                game_over = False
+                score = 0
+                safe_zone_radius = 300
+                safe_zone_shrink_timer = 1000
+    
+    if not game_over:
+        # Get keyboard input
+        keys = pygame.key.get_pressed()
+        
+        # Player movement
+        dx, dy = 0, 0
+        if keys[pygame.K_w]:
+            dy = -PLAYER_SPEED
+        if keys[pygame.K_s]:
+            dy = PLAYER_SPEED
+        if keys[pygame.K_a]:
+            dx = -PLAYER_SPEED
+        if keys[pygame.K_d]:
+            dx = PLAYER_SPEED
+            
+        # Normalize diagonal movement
+        if dx != 0 and dy != 0:
+            dx *= 0.7071  # 1/sqrt(2)
+            dy *= 0.7071
+            
+        player.move(dx, dy)
+        
+        # Player aiming with mouse
+        mouse_x, mouse_y = pygame.mouse.get_pos()
+        player.direction = math.degrees(math.atan2(player.y - mouse_y, mouse_x - player.x))
+        
+        # Player shooting
+        if pygame.mouse.get_pressed()[0]:
+            new_bullet = player.shoot()
+            if new_bullet:
+                bullets.append(new_bullet)
+                
+        # Update enemies
+        for enemy in enemies[:]:
+            if enemy.alive:
+                enemy_bullet = enemy.update(player)
+                if enemy_bullet:
+                    bullets.append(enemy_bullet)
+            else:
+                enemies.remove(enemy)
+                score += 100
+                
+        # Update bullets
+        for bullet in bullets[:]:
+            bullet.update()
+            
+            # Check for collisions with player
+            if (bullet.color != player.color and
+                math.sqrt((bullet.x - player.x)**2 + (bullet.y - player.y)**2) < 20):
+                player.take_damage(bullet.damage)
+                bullets.remove(bullet)
+                continue
+                
+            # Check for collisions with enemies
+            for enemy in enemies:
+                if (bullet.color == player.color and
+                    math.sqrt((bullet.x - enemy.x)**2 + (bullet.y - enemy.y)**2) < 20):
+                    enemy.take_damage(bullet.damage)
+                    if bullet in bullets:
+                        bullets.remove(bullet)
+                    break
+                    
+            # Remove bullets that go off screen
+            if bullet.is_off_screen() and bullet in bullets:
+                bullets.remove(bullet)
+                
+        # Check if player is dead
+        if not player.alive:
+            game_over = True
+            
+        # Check if all enemies are dead
+        if not enemies:
+            game_over = True
+            
+        # Safe zone shrinking
+        safe_zone_shrink_timer -= 1
+        if safe_zone_shrink_timer <= 0 and safe_zone_radius > safe_zone_min_radius:
+            safe_zone_radius -= 10
+            safe_zone_shrink_timer = 500  # Reset timer
+            
+        # Damage players outside safe zone
+        if not player.in_safe_zone(player.x, player.y):
+            player.take_damage(0.5)
+            
+        for enemy in enemies:
+            if not enemy.in_safe_zone(enemy.x, enemy.y):
+                enemy.take_damage(0.5)
+    
+    # Draw everything
+    screen.fill(WHITE)
+    
+    # Draw safe zone
+    pygame.draw.circle(screen, YELLOW, (safe_zone_x, safe_zone_y), safe_zone_radius)
+    
+    # Draw player
+    if player.alive:
+        player.draw(screen)
+        
+    # Draw enemies
+    for enemy in enemies:
+        if enemy.alive:
+            enemy.draw(screen)
+            
+    # Draw bullets
+    for bullet in bullets:
+        bullet.draw(screen)
+        
+    # Draw HUD
+    font = pygame.font.SysFont(None, 36)
+    ammo_text = font.render(f"Ammo: {player.ammo}", True, BLACK)
+    health_text = font.render(f"Health: {player.health}", True, BLACK)
+    score_text = font.render(f"Score: {score}", True, BLACK)
+    screen.blit(ammo_text, (10, 10))
+    screen.blit(health_text, (10, 50))
+    screen.blit(score_text, (10, 90))
+    
+    # Draw game over message
+    if game_over:
+        if player.alive:
+            message = "You Win! Press R to restart"
+        else:
+            message = "Game Over! Press R to restart"
+        game_over_text = font.render(message, True, BLACK)
+        text_rect = game_over_text.get_rect(center=(WIDTH//2, HEIGHT//2))
+        screen.blit(game_over_text, text_rect)
+    
+    # Update display
+    pygame.display.flip()
+    clock.tick(FPS)
+
+pygame.quit()
+sys.exit()
